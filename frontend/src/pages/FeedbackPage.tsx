@@ -15,100 +15,76 @@ export default function FeedbackPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!currentUser) return;
-    listWashCycles(currentUser.id).then((data) => {
-      setCycles(data);
-      setCycleId(data[0]?.id ?? null);
-      setGarmentId(data[0]?.garment_ids?.[0] ?? null);
-    });
-    listGarments(currentUser.id).then(setGarments);
+    if (currentUser) {
+      listWashCycles(currentUser.id).then(data => { setCycles(data); if(data.length > 0) setCycleId(data[0].id); });
+      listGarments(currentUser.id).then(setGarments);
+    }
   }, [currentUser]);
 
-  const selectedCycle = cycles.find((c) => c.id === cycleId) ?? null;
+  const selectedCycle = cycles.find(c => c.id === cycleId) ?? null;
+
+  useEffect(() => {
+    if (selectedCycle && selectedCycle.garment_ids.length > 0) {
+      setGarmentId(selectedCycle.garment_ids[0]);
+    } else {
+      setGarmentId(null);
+    }
+  }, [cycleId, selectedCycle]);
 
   const onSubmit = async (values: FeedbackValues) => {
     if (!currentUser || !cycleId) return;
     setSubmitting(true);
     setMessage(null);
     try {
-      await submitFeedback({
-        user_id: currentUser.id,
-        wash_cycle_id: cycleId,
-        garment_id: garmentId,
-        ...values,
-      });
-      setMessage(
-        'Feedback stored. The garment health score was recomputed — retrain the adaptive model from the Profile tab.',
-      );
+      await submitFeedback({ user_id: currentUser.id, wash_cycle_id: cycleId, garment_id: garmentId, ...values });
+      setMessage('Feedback submitted successfully. Garment health updated.');
     } catch (e: any) {
       setMessage(e?.response?.data?.detail ?? e.message);
-    } finally {
-      setSubmitting(false);
-    }
+    } finally { setSubmitting(false); }
   };
 
   if (!currentUser) return <p>Loading…</p>;
 
   return (
-    <div className="page">
-      <h1>Post-Wash Feedback</h1>
-      <p className="muted">
-        Feedback closes the loop: it updates garment health, the behaviour profile and the
-        adaptive recommendation model (Milestone 2 — LEARN).
-      </p>
+    <div>
+      <div className="page-header">
+        <h1>Post-Wash Feedback</h1>
+        <p>Rate your recent washes to improve the AI's personalized recommendations.</p>
+      </div>
 
-      {message && <div className="alert-banner">{message}</div>}
+      {message && <div style={{ padding: '1rem', background: '#F0FDF4', color: 'var(--success)', borderRadius: '8px', marginBottom: '1rem', border: '1px solid #BBF7D0' }}>{message}</div>}
 
       <div className="grid-2">
-        <div className="card">
-          <h2>Select the wash you are rating</h2>
-
+        <div className="card" style={{ height: 'fit-content' }}>
+          <h3 style={{ marginBottom: '1rem' }}>Select Wash Cycle</h3>
           {cycles.length === 0 ? (
-            <p className="muted">
-              No wash cycles logged yet. Log one from the Pre-Wash Advisory tab first.
-            </p>
+            <p style={{ color: 'var(--text-muted)' }}>No wash cycles logged yet. Use the Pre-Wash Advisory first.</p>
           ) : (
-            <>
-              <label className="text-row">
-                <span>Wash cycle</span>
-                <select
-                  value={cycleId ?? ''}
-                  onChange={(e) => {
-                    const id = Number(e.target.value);
-                    setCycleId(id);
-                    const c = cycles.find((x) => x.id === id);
-                    setGarmentId(c?.garment_ids?.[0] ?? null);
-                  }}
-                >
-                  {cycles.map((c) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label>Recent Wash</label>
+                <select value={cycleId ?? ''} onChange={e => setCycleId(Number(e.target.value))}>
+                  {cycles.map(c => (
                     <option key={c.id} value={c.id}>
-                      #{c.id} · {new Date(c.created_at).toLocaleString()} · {c.water_temp}°C /{' '}
-                      {c.spin_rpm} RPM
+                      #{c.id} · {new Date(c.created_at).toLocaleString()} · {c.water_temp}°C
                     </option>
                   ))}
                 </select>
-              </label>
-
-              <label className="text-row">
-                <span>Garment</span>
-                <select
-                  value={garmentId ?? ''}
-                  onChange={(e) =>
-                    setGarmentId(e.target.value ? Number(e.target.value) : null)
-                  }
-                >
-                  <option value="">— load-level feedback —</option>
-                  {(selectedCycle?.garment_ids ?? []).map((id) => {
-                    const g = garments.find((x) => x.id === id);
-                    return (
-                      <option key={id} value={id}>
-                        {g ? `${g.name} (${g.fabric_type})` : `Garment #${id}`}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
-            </>
+              </div>
+              
+              {selectedCycle && selectedCycle.garment_ids.length > 0 && (
+                <div>
+                  <label>Select Specific Garment (Optional)</label>
+                  <select value={garmentId ?? ''} onChange={e => setGarmentId(e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">— Whole Load Feedback —</option>
+                    {selectedCycle.garment_ids.map(id => {
+                      const g = garments.find(x => x.id === id);
+                      return <option key={id} value={id}>{g ? g.name : `Garment #${id}`}</option>;
+                    })}
+                  </select>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

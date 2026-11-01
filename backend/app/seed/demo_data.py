@@ -37,14 +37,14 @@ FABRIC_WASH = {
 
 
 def seed(db: Session) -> dict:
-    existing = db.query(User).filter(User.email == "demo@fabriccare.ai").first()
+    existing = db.query(User).filter(User.email == "user@havels.com").first()
     if existing:
         return {"created": False, "user_id": existing.id, "message": "Demo data already present"}
 
     user = User(
-        name="Demo Household",
-        email="demo@fabriccare.ai",
-        household_id="HH-DEMO-01",
+        name="Household User",
+        email="user@havels.com",
+        household_id="HH-user-01",
         age_group="35-44",
         region="EU",
         preferences={"language": "en", "units": "metric"},

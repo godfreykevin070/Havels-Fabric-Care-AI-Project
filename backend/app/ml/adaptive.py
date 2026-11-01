@@ -1,15 +1,3 @@
-"""
-Adaptive recommendation optimization — Milestone 4 (OPTIMIZE).
-
-Trains a Ridge regression on a user's own post-wash feedback to predict
-fabric damage (fading, shrinkage, roughness, pilling, colour loss) and
-cleaning shortfall for a given set of cycle settings, then grid-searches
-the settings space near the rule-engine baseline to minimise predicted
-damage while staying close to the baseline (regularisation).
-
-Cold-start safe: if the user has fewer than MIN_TRAINING_SAMPLES feedback
-records, the rule-engine output is used unchanged.
-"""
 import logging
 import os
 from datetime import datetime
@@ -32,7 +20,6 @@ class AdaptiveEngine:
         self.model_dir = model_dir or self.settings.MODEL_DIR
         os.makedirs(self.model_dir, exist_ok=True)
 
-    # ------------------------------------------------------------------ io
     def _path(self, user_id: int) -> str:
         return os.path.join(self.model_dir, f"adaptive_user_{user_id}.joblib")
 
@@ -45,17 +32,11 @@ class AdaptiveEngine:
             return None
         try:
             return joblib.load(path)
-        except Exception:  # pragma: no cover - corrupted artifact safety
+        except Exception:
             logger.exception("Failed to load adaptive model for user %s", user_id)
             return None
 
-    # --------------------------------------------------------------- train
     def train(self, user_id: int, samples: list[dict]) -> dict:
-        """
-        `samples` items must contain: fabric_type, color_group, water_temp,
-        spin_rpm, duration_min, wash_count, soiling_level, fading, shrinkage,
-        roughness, pilling, color_loss, cleaning_satisfaction.
-        """
         n = len(samples)
         if n < self.settings.MIN_TRAINING_SAMPLES:
             return {
@@ -97,15 +78,7 @@ class AdaptiveEngine:
 
         return {"trained": True, "n_samples": n, "trained_at": bundle["trained_at"]}
 
-    # ------------------------------------------------------------ optimize
     def optimize(self, user_id: int, base: dict, context: dict) -> dict | None:
-        """
-        `base`    : rule-engine settings {water_temp, spin_rpm, duration_min}
-        `context` : {fabric_type, color_group, wash_count, soiling_level,
-                     min_temp_c, max_temp_c, max_spin_rpm}
-        Returns the optimised settings + prediction metadata, or None if
-        no model is available.
-        """
         bundle = self._load(user_id)
         if bundle is None:
             return None
@@ -120,6 +93,7 @@ class AdaptiveEngine:
         hi_spin = int(context["max_spin_rpm"])
         base_t, base_s, base_d = base["water_temp"], base["spin_rpm"], base["duration_min"]
 
+        # Generate candidates strictly within the safe envelope provided
         temps = sorted({max(lo_t, min(hi_t, base_t + d)) for d in (-10, -5, 0, 5, 10)})
         spins = sorted({max(200, min(hi_spin, base_s + d)) for d in (-400, -200, 0, 200, 400)})
         durs = sorted({max(15, min(120, base_d + d)) for d in (-10, -5, 0, 5, 10)})
@@ -154,7 +128,9 @@ class AdaptiveEngine:
                 + 0.10 * abs(s - base_s) / 200.0
                 + 0.10 * abs(d - base_d) / 10.0
             )
-            score = -(damage + 0.8 * clean_deficit) - deviation
+            # Penalize damage and heavily penalize cleaning shortfall
+            score = -(damage + 1.2 * clean_deficit) - deviation
+            
             if best is None or score > best["score"]:
                 best = {
                     "score": score,
@@ -168,8 +144,6 @@ class AdaptiveEngine:
         if best is None:
             return None
 
-        # If the optimiser lands on the baseline, keep the rule engine's number
-        # but still report that the adaptive path ran.
         best["n_samples"] = bundle["n_samples"]
         best["trained_at"] = bundle["trained_at"]
         best["delta_temp"] = best["water_temp"] - base_t

@@ -13,79 +13,49 @@ export interface FeedbackValues {
 const DEFECT_FIELDS: { key: keyof FeedbackValues; label: string }[] = [
   { key: 'fading', label: 'Fading' },
   { key: 'shrinkage', label: 'Shrinkage' },
-  { key: 'roughness', label: 'Roughness / harsh feel' },
+  { key: 'roughness', label: 'Roughness' },
   { key: 'pilling', label: 'Pilling' },
-  { key: 'color_loss', label: 'Colour loss' },
+  { key: 'color_loss', label: 'Colour Loss' },
 ];
 
-export default function FeedbackForm({
-  onSubmit,
-  submitting,
-}: {
-  onSubmit: (values: FeedbackValues) => void;
-  submitting: boolean;
-}) {
+export default function FeedbackForm({ onSubmit, submitting }: { onSubmit: (values: FeedbackValues) => void; submitting: boolean; }) {
   const [values, setValues] = useState<FeedbackValues>({
-    cleaning_satisfaction: 4,
-    fading: 0,
-    shrinkage: 0,
-    roughness: 0,
-    pilling: 0,
-    color_loss: 0,
-    notes: '',
+    cleaning_satisfaction: 4, fading: 0, shrinkage: 0, roughness: 0, pilling: 0, color_loss: 0, notes: '',
   });
 
-  const update = (key: keyof FeedbackValues, value: number | string) =>
-    setValues((prev) => ({ ...prev, [key]: value }));
+  const update = (key: keyof FeedbackValues, value: number | string) => setValues(prev => ({ ...prev, [key]: value }));
 
   return (
-    <form
-      className="card feedback-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSubmit(values);
-      }}
-    >
-      <h2>How did the wash turn out?</h2>
-
-      <label className="slider-row">
-        <span>Cleaning satisfaction (1–5)</span>
-        <input
-          type="range"
-          min={1}
-          max={5}
-          value={values.cleaning_satisfaction}
-          onChange={(e) => update('cleaning_satisfaction', Number(e.target.value))}
-        />
-        <strong>{values.cleaning_satisfaction}</strong>
-      </label>
-
-      {DEFECT_FIELDS.map((f) => (
-        <label className="slider-row" key={f.key}>
-          <span>{f.label} (0–3)</span>
-          <input
-            type="range"
-            min={0}
-            max={3}
-            value={values[f.key] as number}
-            onChange={(e) => update(f.key, Number(e.target.value))}
-          />
-          <strong>{values[f.key] as number}</strong>
+    <form className="card" onSubmit={(e) => { e.preventDefault(); onSubmit(values); }}>
+      <h3 style={{ marginBottom: '1.5rem' }}>Rate Your Wash</h3>
+      
+      <div style={{ marginBottom: '1.5rem' }}>
+        <label style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span>Cleaning Satisfaction</span>
+          <strong>{values.cleaning_satisfaction} / 5</strong>
         </label>
-      ))}
+        <input type="range" min={1} max={5} value={values.cleaning_satisfaction} onChange={(e) => update('cleaning_satisfaction', Number(e.target.value))} style={{ width: '100%', accentColor: 'var(--havells-red)' }} />
+      </div>
 
-      <label className="text-row">
-        <span>Notes</span>
-        <textarea
-          rows={2}
-          value={values.notes}
-          onChange={(e) => update('notes', e.target.value)}
-          placeholder="e.g. sweater felt scratchy, jeans lost indigo"
-        />
-      </label>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+        {DEFECT_FIELDS.map(f => (
+          <div key={f.key}>
+            <label style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>{f.label}</span>
+              <strong>{values[f.key] as number} / 3</strong>
+            </label>
+            <input type="range" min={0} max={3} value={values[f.key] as number} onChange={(e) => update(f.key, Number(e.target.value))} style={{ width: '100%', accentColor: 'var(--havells-red)' }} />
+          </div>
+        ))}
+      </div>
 
-      <button className="primary" type="submit" disabled={submitting}>
-        {submitting ? 'Submitting…' : 'Submit feedback'}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <label>Notes</label>
+        <textarea rows={3} value={values.notes} onChange={(e) => update('notes', e.target.value)} placeholder="e.g. Sweater felt scratchy, jeans lost some indigo..." />
+      </div>
+
+      <button className="primary" type="submit" disabled={submitting} style={{ width: '100%', justifyContent: 'center' }}>
+        {submitting ? 'Submitting…' : 'Submit Feedback'}
       </button>
     </form>
   );

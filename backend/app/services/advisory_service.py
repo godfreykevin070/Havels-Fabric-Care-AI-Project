@@ -32,22 +32,54 @@ def generate_advisory(db: Session, payload) -> dict:
         raise HTTPException(status_code=404, detail=f"User {payload.user_id} not found")
 
     garments = _anchor_garments(db, payload.user_id, payload.garment_ids)
+    if not garments:
+        raise HTTPException(status_code=400, detail="No garments selected for the wash.")
 
-    fabric_types = [g.fabric_type for g in garments] or ["cotton"]
-    anchor_fabric = RuleEngine.most_delicate(fabric_types)
-    anchor = next((g for g in garments if g.fabric_type == anchor_fabric), None)
+    # 1. Evaluate safety envelopes for ALL garments independently
+    min_safe_temp = 90
+    max_safe_temp = 20
+    max_safe_spin = 1200
+    anchor_fabric = "cotton"
+    lowest_durability = 1.0
 
+    for g in garments:
+        g_ctx = RuleContext(
+            fabric_type=g.fabric_type, color_group=g.color_group,
+            soiling_level="normal", load_size="medium",
+            wash_count=g.wash_count, health_score=g.health_score
+        )
+        g_res = rule_engine.recommend(g_ctx)
+        
+        min_safe_temp = min(min_safe_temp, g_res.bounds["min_temp_c"])
+        max_safe_temp = min(max_safe_temp, g_res.bounds["max_temp_c"])
+        max_safe_spin = min(max_safe_spin, g_res.bounds["max_spin_rpm"])
+        
+        if g_res.bounds["durability"] < lowest_durability:
+            lowest_durability = g_res.bounds["durability"]
+            anchor_fabric = g.fabric_type
+
+    # 2. Get base recommendation using the most delicate fabric as the anchor
+    anchor = next((g for g in garments if g.fabric_type == anchor_fabric), garments[0])
     ctx = RuleContext(
         fabric_type=anchor_fabric,
-        color_group=anchor.color_group if anchor else "light",
+        color_group=anchor.color_group,
         soiling_level=payload.soiling_level,
         load_size=payload.load_size,
-        wash_count=anchor.wash_count if anchor else 0,
-        wear_count=anchor.wear_count if anchor else 0,
-        health_score=anchor.health_score if anchor else 100.0,
+        wash_count=anchor.wash_count,
+        wear_count=anchor.wear_count,
+        health_score=anchor.health_score,
     )
 
     base = rule_engine.recommend(ctx)
+
+    # 3. Apply the unified strict limits across the entire load
+    base.bounds["min_temp_c"] = min_safe_temp
+    base.bounds["max_temp_c"] = max_safe_temp
+    base.bounds["max_spin_rpm"] = max_safe_spin
+
+    # Force the base settings to respect the load's hard limits
+    base.water_temp = max(min_safe_temp, min(max_safe_temp, base.water_temp))
+    base.spin_rpm = min(max_safe_spin, base.spin_rpm)
 
     settings = base.settings()
     alerts = list(base.alerts)
@@ -56,6 +88,14 @@ def generate_advisory(db: Session, payload) -> dict:
     engine = "rule"
     adaptive_applied = False
     adaptive_meta: dict | None = None
+
+    if len(garments) > 1:
+        reasons.append(
+            f"Mixed load resolved: constrained to strictest boundaries "
+            f"({max_safe_temp}°C max, {max_safe_spin} RPM max) to protect delicate items."
+        )
+        if payload.soiling_level == "heavy" and max_safe_temp < 40:
+            alerts.append("Heavy soiling detected, but delicate fabrics limit temperature. Consider pre-treating stains.")
 
     # ---------- Milestone 4: adaptive optimisation -------------------------
     if payload.use_adaptive and adaptive_engine.is_trained(payload.user_id):
@@ -86,15 +126,10 @@ def generate_advisory(db: Session, payload) -> dict:
             confidence = round(min(0.96, confidence + 0.05), 2)
             reasons.append(
                 "Adaptive engine refined the settings using "
-                f"{adaptive_meta['n_samples']} of your past wash-feedback records "
-                f"(Δtemp {adaptive_meta['delta_temp']:+d}°C, "
-                f"Δspin {adaptive_meta['delta_spin']:+d} RPM, "
-                f"Δduration {adaptive_meta['delta_duration']:+d} min)."
+                f"{adaptive_meta['n_samples']} of your past wash-feedback records."
             )
             if adaptive_meta["changed"]:
-                alerts.append(
-                    "Settings adjusted from your history to reduce observed fabric damage."
-                )
+                alerts.append("Settings adjusted from your history to reduce observed fabric damage.")
 
     # ---------- Per-garment guidance --------------------------------------
     per_garment = []

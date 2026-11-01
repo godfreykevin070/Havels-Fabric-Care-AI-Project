@@ -1,13 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import {
-  createWashCycle,
-  getAdvisory,
-  getEnums,
-  listGarments,
-} from '../api/client';
+import { useEffect, useState } from 'react';
+import { createWashCycle, getAdvisory, getEnums, listGarments } from '../api/client';
 import RecommendationPanel from '../components/RecommendationPanel';
 import { useUserContext } from '../context/UserContext';
 import type { Advisory, Garment, MetaEnums } from '../types';
+import { Shirt, CheckCircle2 } from 'lucide-react';
 
 export default function AdvisoryPage() {
   const { currentUser } = useUserContext();
@@ -23,24 +19,17 @@ export default function AdvisoryPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!currentUser) return;
-    listGarments(currentUser.id).then(setGarments);
+    if (currentUser) listGarments(currentUser.id).then(setGarments);
+    getEnums().then(setEnums);
   }, [currentUser]);
 
-  useEffect(() => {
-    getEnums().then(setEnums);
-  }, []);
-
-  const selectedGarments = useMemo(
-    () => garments.filter((g) => selected.includes(g.id)),
-    [garments, selected],
-  );
-
-  const toggle = (id: number) =>
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggle = (id: number) => setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const request = async () => {
-    if (!currentUser) return;
+    if (!currentUser || selected.length === 0) {
+      setMessage("Please select at least one garment.");
+      return;
+    }
     setBusy(true);
     setMessage(null);
     try {
@@ -75,7 +64,10 @@ export default function AdvisoryPage() {
         load_size: loadSize,
         soiling_level: soiling,
       });
-      setMessage('Wash logged. Garment counters and health scores updated.');
+      setMessage('Wash logged successfully. Counters updated.');
+      setAdvisory(null);
+      setSelected([]);
+      if (currentUser) listGarments(currentUser.id).then(setGarments);
     } catch (e: any) {
       setMessage(e?.response?.data?.detail ?? e.message);
     } finally {
@@ -86,99 +78,76 @@ export default function AdvisoryPage() {
   if (!currentUser) return <p>Loading…</p>;
 
   return (
-    <div className="page">
-      <h1>Pre-Wash Advisory</h1>
-      <p className="muted">
-        Select the garments you are about to wash. The rule engine produces a safe baseline;
-        the adaptive engine refines it using your past feedback.
-      </p>
+    <div>
+      <div className="page-header">
+        <h1>Pre-Wash Advisory</h1>
+        <p>Select garments to generate a safe, AI-optimized wash program.</p>
+      </div>
 
       <div className="grid-2">
         <div className="card">
-          <h2>1. Select garments</h2>
-          {garments.length === 0 && <p className="muted">No garments yet — add some in Wardrobe.</p>}
-          <ul className="select-list">
+          <h3 style={{ marginBottom: '1rem' }}>1. Select Garments</h3>
+          {garments.length === 0 && <p className="muted">No garments found. Please add some in the Digital Wardrobe.</p>}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
             {garments.map((g) => (
-              <li key={g.id} className={selected.includes(g.id) ? 'selected' : ''}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(g.id)}
-                    onChange={() => toggle(g.id)}
-                  />
-                  <span>
-                    <strong>{g.name}</strong>
-                    <span className="muted"> · {g.fabric_type} · {g.color_group}</span>
-                    <span className="muted small">
-                      {' '}
-                      · health {g.health_score.toFixed(0)} · washed {g.wash_count}×
-                    </span>
-                  </span>
-                </label>
-              </li>
+              <div 
+                key={g.id} 
+                onClick={() => toggle(g.id)}
+                style={{
+                  padding: '1rem', borderRadius: '8px', border: `2px solid ${selected.includes(g.id) ? 'var(--havells-red)' : 'var(--border)'}`,
+                  cursor: 'pointer', background: selected.includes(g.id) ? '#FEF2F2' : 'white', position: 'relative'
+                }}
+              >
+                {selected.includes(g.id) && <CheckCircle2 size={18} color="var(--havells-red)" style={{ position: 'absolute', top: '0.5rem', right: '0.5rem' }} />}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <Shirt size={16} color="var(--text-muted)" />
+                  <strong style={{ fontSize: '0.875rem' }}>{g.name}</strong>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {g.fabric_type} • Health {g.health_score.toFixed(0)}%
+                </div>
+              </div>
             ))}
-          </ul>
-
-          <h2>2. Load context</h2>
-          <div className="field-row">
-            <label>
-              Soiling level
-              <select value={soiling} onChange={(e) => setSoiling(e.target.value)}>
-                {(enums?.soiling_levels ?? ['light', 'normal', 'heavy', 'stain']).map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Load size
-              <select value={loadSize} onChange={(e) => setLoadSize(e.target.value)}>
-                {(enums?.load_sizes ?? ['small', 'medium', 'large']).map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
 
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={useAdaptive}
-              onChange={(e) => setUseAdaptive(e.target.checked)}
-            />
-            Use adaptive learning (requires enough past feedback)
+          <h3 style={{ marginBottom: '1rem' }}>2. Load Context</h3>
+          <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ flex: 1 }}>
+              <label>Soiling Level</label>
+              <select value={soiling} onChange={(e) => setSoiling(e.target.value)}>
+                {(enums?.soiling_levels ?? ['light', 'normal', 'heavy', 'stain']).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label>Load Size</label>
+              <select value={loadSize} onChange={(e) => setLoadSize(e.target.value)}>
+                {(enums?.load_sizes ?? ['small', 'medium', 'large']).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', cursor: 'pointer' }}>
+            <input type="checkbox" checked={useAdaptive} onChange={(e) => setUseAdaptive(e.target.checked)} style={{ width: 'auto' }} />
+            <span style={{ fontSize: '0.875rem' }}>Use adaptive AI learning (if available)</span>
           </label>
 
-          <button className="primary" onClick={request} disabled={busy}>
-            {busy ? 'Analysing…' : 'Get recommendation'}
+          <button className="primary" onClick={request} disabled={busy || selected.length === 0} style={{ width: '100%', justifyContent: 'center' }}>
+            {busy ? 'Analysing…' : 'Get Recommendation'}
           </button>
-
-          {selectedGarments.length > 1 && (
-            <p className="muted small">
-              Mixed load: recommendation is anchored on the most delicate fabric (
-              {selectedGarments
-                .map((g) => g.fabric_type)
-                .sort()
-                .join(', ')}
-              ).
-            </p>
-          )}
         </div>
 
         <div>
-          {message && <div className="alert-banner">{message}</div>}
+          {message && <div style={{ padding: '1rem', background: message.includes('success') ? '#F0FDF4' : '#FEF2F2', color: message.includes('success') ? 'var(--success)' : 'var(--error)', borderRadius: '8px', marginBottom: '1rem', border: `1px solid ${message.includes('success') ? '#BBF7D0' : '#FECACA'}` }}>{message}</div>}
           {advisory ? (
             <RecommendationPanel advisory={advisory} onAccept={accept} accepting={accepting} />
           ) : (
-            <div className="card empty-state">
-              <h2>No recommendation yet</h2>
-              <p className="muted">
-                Pick at least one garment and press “Get recommendation”.
-              </p>
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '400px', color: 'var(--text-muted)' }}>
+              <Shirt size={48} style={{ opacity: 0.2, marginBottom: '1rem' }} />
+              <p>Select garments and click "Get Recommendation"</p>
             </div>
           )}
         </div>

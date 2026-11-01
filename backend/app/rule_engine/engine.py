@@ -82,7 +82,7 @@ class RuleEngine:
             f"{duration} min on '{cycle}'."
         )
 
-        # ---- Colour adjustment -------------------------------------------
+        # ---- 1. Colour adjustment -------------------------------------------
         color_rule = COLOR_ADJUSTMENTS.get(ctx.color_group, COLOR_ADJUSTMENTS["light"])
         if color_rule["temp_delta"]:
             temp += color_rule["temp_delta"]
@@ -97,15 +97,12 @@ class RuleEngine:
             )
         alerts.extend(color_rule["alerts"])
 
-        # ---- Soiling adjustment ------------------------------------------
+        # ---- 2. Soiling adjustment ------------------------------------------
         soil = SOILING_ADJUSTMENTS.get(ctx.soiling_level, SOILING_ADJUSTMENTS["normal"])
-        if soil["temp_delta"]:
+        if soil["temp_delta"] or soil["duration_delta"] or soil["spin_delta"]:
             temp += soil["temp_delta"]
-        if soil["duration_delta"]:
             duration += soil["duration_delta"]
-        if soil["spin_delta"]:
             spin += soil["spin_delta"]
-        if any(soil["temp_delta"] or soil["duration_delta"] or soil["spin_delta"]):
             reasons.append(
                 f"Soiling level '{ctx.soiling_level}': temperature "
                 f"{soil['temp_delta']:+d}°C, duration {soil['duration_delta']:+d} min, "
@@ -113,7 +110,7 @@ class RuleEngine:
             )
         alerts.extend(soil["alerts"])
 
-        # ---- Load-size adjustment ----------------------------------------
+        # ---- 3. Load-size adjustment ----------------------------------------
         load = LOAD_ADJUSTMENTS.get(ctx.load_size, LOAD_ADJUSTMENTS["medium"])
         duration += load["duration_delta"]
         spin += load["spin_delta"]
@@ -123,7 +120,7 @@ class RuleEngine:
             )
         alerts.extend(load["alerts"])
 
-        # ---- Garment-lifecycle (ageing) adjustment ------------------------
+        # ---- 4. Garment-lifecycle (ageing) adjustment ------------------------
         if ctx.wash_count >= 30:
             temp -= 5
             spin = min(spin, 600)
@@ -147,7 +144,7 @@ class RuleEngine:
             reasons.append("Health-score rule: low fabric health → gentle wash regime.")
             confidence -= 0.05
 
-        # ---- Clamp to fabric-safe envelope --------------------------------
+        # ---- 5. Final safety clamping ----------------------------------------
         raw = (temp, spin, duration)
         temp = _clamp(temp, profile.min_temp_c, profile.max_temp_c)
         spin = _clamp(spin, 200, profile.max_spin_rpm)
@@ -186,7 +183,6 @@ class RuleEngine:
 
     @staticmethod
     def most_delicate(fabric_types: list[str]) -> str:
-        """Anchor a mixed load on its most fragile fabric."""
         if not fabric_types:
             return "cotton"
         return min(
